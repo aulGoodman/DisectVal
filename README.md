@@ -51,7 +51,21 @@ DisectVal is an AI-powered gameplay analysis tool for Valorant. It analyzes your
 - Python 3.10 or higher
 - Windows 10/11 (for full functionality)
 
-### Quick Start
+### Quick Start with Executables
+
+DisectVal provides 3 executables at the repository root:
+
+| Executable | Description |
+|------------|-------------|
+| **Setup.exe** | Run first to install dependencies and initialize the application |
+| **UserVersion.exe** | Standard user version for regular gameplay analysis |
+| **Dev.exe** | Developer mode with full permissions (requires dev credentials) |
+
+**First-time setup:**
+1. Run `Setup.exe` to install dependencies and configure the application
+2. Run `UserVersion.exe` to start using DisectVal
+
+### From Source
 
 ```bash
 # Clone the repository
@@ -65,13 +79,9 @@ pip install -r requirements.txt
 python -m disectval.main
 ```
 
-### Windows Executable
+### Building Executables
 
-You can run DisectVal directly from the pre-built executable:
-- Download `DisectVal.exe` from the repository root
-- Double-click to run (no Python installation required)
-
-To build the executable yourself on Windows:
+To build the executables yourself on Windows:
 ```cmd
 # Build using the batch script
 build_exe.bat
@@ -79,10 +89,12 @@ build_exe.bat
 # Or manually with PyInstaller
 pip install pyinstaller
 pyinstaller DisectVal.spec --noconfirm
-copy dist\DisectVal.exe .
+copy dist\Setup.exe .
+copy dist\Dev.exe .
+copy dist\UserVersion.exe .
 ```
 
-The executable will be created at the repository root level (outside all folders).
+The executables will be created at the repository root level (outside all folders).
 
 ### For Development
 

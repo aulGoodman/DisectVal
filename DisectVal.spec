@@ -1,42 +1,52 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
 DisectVal PyInstaller Spec File
+Builds 3 executables at the repository root:
+- Setup.exe: Dependency installation and initial setup
+- Dev.exe: Developer mode with full permissions (requires dev credentials)
+- UserVersion.exe: Standard user version
+
 Build command: pyinstaller DisectVal.spec
-The resulting executable will be created in the dist/ folder.
-After building, copy DisectVal.exe from dist/ to the repository root.
 """
 
 block_cipher = None
 
-a = Analysis(
-    ['src/disectval/main.py'],
+# Common analysis settings
+common_hiddenimports = [
+    'disectval',
+    'disectval.auth',
+    'disectval.auth.credentials',
+    'disectval.auth.roles',
+    'disectval.gui',
+    'disectval.gui.theme',
+    'disectval.gui.login_page',
+    'disectval.gui.dashboard',
+    'disectval.analysis',
+    'disectval.analysis.video_analyzer',
+    'disectval.utils',
+    'disectval.utils.valorant_detector',
+    'disectval.utils.windows_checker',
+    'disectval.config',
+    'disectval.config.settings',
+    'disectval.training',
+    'disectval.training.sync',
+    'customtkinter',
+    'PIL',
+    'cv2',
+    'numpy',
+    'psutil',
+    'yaml',
+    'cryptography',
+    'bcrypt',
+]
+
+# ==================== Setup.exe ====================
+setup_a = Analysis(
+    ['src/disectval/setup_entry.py'],
     pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=[
-        'disectval.auth',
-        'disectval.auth.credentials',
-        'disectval.auth.roles',
-        'disectval.gui',
-        'disectval.gui.theme',
-        'disectval.gui.login_page',
-        'disectval.gui.dashboard',
-        'disectval.analysis',
-        'disectval.analysis.video_analyzer',
-        'disectval.utils',
-        'disectval.utils.valorant_detector',
-        'disectval.utils.windows_checker',
-        'disectval.config',
-        'disectval.config.settings',
-        'customtkinter',
-        'PIL',
-        'cv2',
-        'numpy',
-        'psutil',
-        'yaml',
-        'cryptography',
-        'bcrypt',
-    ],
+    hiddenimports=common_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -46,26 +56,106 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
 )
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+setup_pyz = PYZ(setup_a.pure, setup_a.zipped_data, cipher=block_cipher)
 
-exe = EXE(
-    pyz,
-    a.scripts,
-    a.binaries,
-    a.datas,
+setup_exe = EXE(
+    setup_pyz,
+    setup_a.scripts,
+    setup_a.binaries,
+    setup_a.datas,
     [],
-    name='DisectVal',
+    name='Setup',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,  # Disabled for better antivirus compatibility
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,  # Set to False for GUI application (no console window)
+    console=True,  # Console for setup to show progress
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,  # Add icon path here: icon='assets/icon.ico'
+    icon=None,
+)
+
+# ==================== Dev.exe ====================
+dev_a = Analysis(
+    ['src/disectval/dev_entry.py'],
+    pathex=[],
+    binaries=[],
+    datas=[],
+    hiddenimports=common_hiddenimports,
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+dev_pyz = PYZ(dev_a.pure, dev_a.zipped_data, cipher=block_cipher)
+
+dev_exe = EXE(
+    dev_pyz,
+    dev_a.scripts,
+    dev_a.binaries,
+    dev_a.datas,
+    [],
+    name='Dev',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=False,  # GUI application
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon=None,
+)
+
+# ==================== UserVersion.exe ====================
+user_a = Analysis(
+    ['src/disectval/user_entry.py'],
+    pathex=[],
+    binaries=[],
+    datas=[],
+    hiddenimports=common_hiddenimports,
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+user_pyz = PYZ(user_a.pure, user_a.zipped_data, cipher=block_cipher)
+
+user_exe = EXE(
+    user_pyz,
+    user_a.scripts,
+    user_a.binaries,
+    user_a.datas,
+    [],
+    name='UserVersion',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=False,  # GUI application
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon=None,
 )

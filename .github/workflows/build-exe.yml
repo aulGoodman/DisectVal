@@ -1,19 +1,19 @@
-# This workflow builds the DisectVal Windows executable
-# Run this workflow manually to build and commit DisectVal.exe to the repository root
+# This workflow builds the DisectVal Windows executables
+# Run this workflow manually to build and commit executables to the repository root
 
-name: Build Windows Executable
+name: Build Windows Executables
 
 on:
   workflow_dispatch:
     inputs:
       commit_exe:
-        description: 'Commit the .exe to the repository'
+        description: 'Commit the .exe files to the repository'
         default: 'true'
         required: true
         type: boolean
 
 permissions:
-  contents: write  # Required to commit and push the .exe file
+  contents: write  # Required to commit and push the .exe files
 
 jobs:
   build:
@@ -34,22 +34,36 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
         
-    - name: Build executable
+    - name: Build executables
       run: |
         pyinstaller DisectVal.spec --noconfirm
-        copy dist\DisectVal.exe DisectVal.exe
+        copy dist\Setup.exe Setup.exe
+        copy dist\Dev.exe Dev.exe
+        copy dist\UserVersion.exe UserVersion.exe
         
-    - name: Upload artifact
+    - name: Upload Setup.exe
       uses: actions/upload-artifact@v4
       with:
-        name: DisectVal-Windows
-        path: DisectVal.exe
+        name: Setup
+        path: Setup.exe
         
-    - name: Commit and push .exe
+    - name: Upload Dev.exe
+      uses: actions/upload-artifact@v4
+      with:
+        name: Dev
+        path: Dev.exe
+        
+    - name: Upload UserVersion.exe
+      uses: actions/upload-artifact@v4
+      with:
+        name: UserVersion
+        path: UserVersion.exe
+        
+    - name: Commit and push executables
       if: ${{ inputs.commit_exe }}
       run: |
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
         git config --local user.name "github-actions[bot]"
-        git add DisectVal.exe
-        git commit -m "Add DisectVal.exe built from $(git rev-parse --short HEAD)" || echo "No changes to commit"
+        git add Setup.exe Dev.exe UserVersion.exe
+        git commit -m "Add executables built from $(git rev-parse --short HEAD)" || echo "No changes to commit"
         git push
