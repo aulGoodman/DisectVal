@@ -65,6 +65,25 @@ pip install -r requirements.txt
 python -m disectval.main
 ```
 
+### Windows Executable
+
+You can run DisectVal directly from the pre-built executable:
+- Download `DisectVal.exe` from the repository root
+- Double-click to run (no Python installation required)
+
+To build the executable yourself on Windows:
+```cmd
+# Build using the batch script
+build_exe.bat
+
+# Or manually with PyInstaller
+pip install pyinstaller
+pyinstaller DisectVal.spec --noconfirm
+copy dist\DisectVal.exe .
+```
+
+The executable will be created at the repository root level (outside all folders).
+
 ### For Development
 
 ```bash
