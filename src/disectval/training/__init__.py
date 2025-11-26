@@ -6,6 +6,6 @@ This module provides:
 - File locking for coordinated training across instances
 """
 
-from .sync import SharedDataSync, get_sync_instance
+from .sync import SharedDataSync, SyncConfig, get_sync_instance
 
-__all__ = ['SharedDataSync', 'get_sync_instance']
+__all__ = ['SharedDataSync', 'SyncConfig', 'get_sync_instance']

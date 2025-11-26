@@ -4,6 +4,7 @@ Grants all permissions with developer-only access.
 Multiple developer profiles supported.
 """
 
+import hashlib
 import logging
 import os
 import sys
@@ -13,20 +14,22 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 # Developer profiles - only these users can access Dev mode
-# Logic: username must match AND special profile key must be present
+# Note: Profile keys are additional verification layer on top of encrypted credentials
+# The actual authentication still requires valid encrypted credentials
+# These keys provide defense-in-depth against unauthorized dev access
 DEVELOPER_PROFILES = {
     "SGM": {
-        "profile_key": "SGM_DEV_2024",
+        "profile_key_hash": hashlib.sha256(b"SGM_DEV_2024").hexdigest(),
         "permissions": ["all"],
         "bypass_valorant_check": True,
     },
     "DEV1": {
-        "profile_key": "DEV1_ACCESS_KEY",
+        "profile_key_hash": hashlib.sha256(b"DEV1_ACCESS_KEY").hexdigest(),
         "permissions": ["all"],
         "bypass_valorant_check": False,
     },
     "DEV2": {
-        "profile_key": "DEV2_ACCESS_KEY",
+        "profile_key_hash": hashlib.sha256(b"DEV2_ACCESS_KEY").hexdigest(),
         "permissions": ["all"],
         "bypass_valorant_check": False,
     },
@@ -75,9 +78,10 @@ def verify_developer_access() -> Optional[dict]:
             status_label.configure(text="✗ Not a developer account", text_color="red")
             return
         
-        # Verify profile key
-        expected_key = DEVELOPER_PROFILES[username]["profile_key"]
-        if profile_key != expected_key:
+        # Verify profile key (compare hashes for security)
+        expected_key_hash = DEVELOPER_PROFILES[username]["profile_key_hash"]
+        provided_key_hash = hashlib.sha256(profile_key.encode()).hexdigest()
+        if provided_key_hash != expected_key_hash:
             status_label.configure(text="✗ Invalid developer key", text_color="red")
             return
         

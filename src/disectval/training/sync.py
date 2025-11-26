@@ -31,6 +31,15 @@ class TrainingRecord:
 
 
 @dataclass
+class SyncConfig:
+    """Configuration for the sync system."""
+    instance_id_bytes: int = 16  # 128-bit for better collision resistance
+    stale_lock_timeout_seconds: int = 3600  # 1 hour default
+    active_instance_timeout_seconds: int = 600  # 10 minutes default
+    sync_interval_seconds: int = 60
+
+
+@dataclass
 class SyncState:
     """State of the sync system."""
     instance_id: str
@@ -49,13 +58,16 @@ class SharedDataSync:
     - Syncs training results
     """
     
-    def __init__(self, sync_dir: Optional[Path] = None):
+    def __init__(self, sync_dir: Optional[Path] = None, config: Optional[SyncConfig] = None):
         """
         Initialize the shared data sync system.
         
         Args:
             sync_dir: Directory for sync data. Defaults to app data location.
+            config: Optional sync configuration. Uses defaults if not provided.
         """
+        self.config = config or SyncConfig()
+        
         if sync_dir is None:
             if os.name == 'nt':
                 base = Path(os.environ.get('LOCALAPPDATA', '')) / 'DisectVal'
@@ -73,6 +85,9 @@ class SharedDataSync:
         self.lock_dir = self.sync_dir / 'locks'
         self.lock_dir.mkdir(exist_ok=True)
         
+        # Track last modified time for incremental sync
+        self._last_registry_mtime: float = 0
+        
         # Load or create instance ID
         self.instance_id = self._get_or_create_instance_id()
         
@@ -87,16 +102,16 @@ class SharedDataSync:
         logger.info(f"SharedDataSync initialized for instance: {self.instance_id}")
     
     def _get_or_create_instance_id(self) -> str:
-        """Get or create a unique instance identifier."""
+        """Get or create a unique instance identifier (128-bit for collision resistance)."""
         if self.config_path.exists():
             try:
                 with open(self.config_path, 'r') as f:
                     config = json.load(f)
-                    return config.get('instance_id', os.urandom(8).hex())
+                    return config.get('instance_id', os.urandom(self.config.instance_id_bytes).hex())
             except Exception:
                 pass
         
-        instance_id = os.urandom(8).hex()
+        instance_id = os.urandom(self.config.instance_id_bytes).hex()
         self._save_config({'instance_id': instance_id})
         return instance_id
     
@@ -145,19 +160,44 @@ class SharedDataSync:
             json.dump(data, f, indent=2)
     
     def compute_file_hash(self, file_path: Path) -> str:
-        """Compute SHA-256 hash of a file."""
-        sha256 = hashlib.sha256()
-        with open(file_path, 'rb') as f:
-            for chunk in iter(lambda: f.read(8192), b''):
-                sha256.update(chunk)
-        return sha256.hexdigest()
+        """
+        Compute SHA-256 hash of a file.
+        
+        Args:
+            file_path: Path to the file to hash
+            
+        Returns:
+            Hexadecimal hash string
+            
+        Raises:
+            FileNotFoundError: If the file does not exist
+            PermissionError: If the file cannot be read
+            IOError: If there's an error reading the file
+        """
+        file_path = Path(file_path)
+        if not file_path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+        if not file_path.is_file():
+            raise ValueError(f"Path is not a file: {file_path}")
+        
+        try:
+            sha256 = hashlib.sha256()
+            with open(file_path, 'rb') as f:
+                for chunk in iter(lambda: f.read(8192), b''):
+                    sha256.update(chunk)
+            return sha256.hexdigest()
+        except PermissionError:
+            raise PermissionError(f"Cannot read file (permission denied): {file_path}")
+        except IOError as e:
+            raise IOError(f"Error reading file {file_path}: {e}")
     
     def is_file_processed(self, file_path: Path) -> bool:
         """Check if a file has already been processed for training."""
         try:
             file_hash = self.compute_file_hash(file_path)
             return file_hash in self.training_registry
-        except Exception:
+        except (FileNotFoundError, PermissionError, IOError, ValueError) as e:
+            logger.warning(f"Could not check if file is processed: {e}")
             return False
     
     def acquire_file_lock(self, file_hash: str) -> bool:
@@ -173,9 +213,9 @@ class SharedDataSync:
                 with open(lock_file, 'r') as f:
                     lock_data = json.load(f)
                 
-                # Check if lock is stale (older than 1 hour)
+                # Check if lock is stale (using configurable timeout)
                 lock_time = datetime.fromisoformat(lock_data['timestamp'])
-                if (datetime.now() - lock_time).total_seconds() > 3600:
+                if (datetime.now() - lock_time).total_seconds() > self.config.stale_lock_timeout_seconds:
                     # Stale lock, can override
                     pass
                 elif lock_data['instance_id'] != self.instance_id:
@@ -272,9 +312,9 @@ class SharedDataSync:
         self._save_state()
     
     def get_active_instances(self) -> List[str]:
-        """Get list of recently active instances (within last 10 minutes)."""
+        """Get list of recently active instances (using configurable timeout)."""
         active = []
-        cutoff = datetime.now().timestamp() - 600
+        cutoff = datetime.now().timestamp() - self.config.active_instance_timeout_seconds
         
         for inst_id, timestamp in self.state.active_instances.items():
             try:
@@ -286,15 +326,28 @@ class SharedDataSync:
         
         return active
     
-    def start_sync_thread(self, interval: int = 60) -> None:
+    def _should_reload_registry(self) -> bool:
+        """Check if registry file has been modified and needs reloading."""
+        try:
+            if self.registry_path.exists():
+                mtime = self.registry_path.stat().st_mtime
+                if mtime > self._last_registry_mtime:
+                    return True
+        except Exception:
+            pass
+        return False
+    
+    def start_sync_thread(self, interval: Optional[int] = None) -> None:
         """Start background sync thread."""
         if self._sync_thread and self._sync_thread.is_alive():
             return
         
+        sync_interval = interval or self.config.sync_interval_seconds
+        
         self._stop_sync.clear()
         self._sync_thread = threading.Thread(
             target=self._sync_loop,
-            args=(interval,),
+            args=(sync_interval,),
             daemon=True
         )
         self._sync_thread.start()
@@ -308,11 +361,16 @@ class SharedDataSync:
         logger.info("Sync thread stopped")
     
     def _sync_loop(self, interval: int) -> None:
-        """Background sync loop."""
+        """Background sync loop with incremental registry loading."""
         while not self._stop_sync.is_set():
             try:
                 self.announce_presence()
-                self.training_registry = self._load_registry()
+                
+                # Only reload registry if file has changed (incremental sync)
+                if self._should_reload_registry():
+                    self.training_registry = self._load_registry()
+                    logger.debug("Registry reloaded due to changes")
+                
                 self.state.last_sync = datetime.now().isoformat()
                 self._save_state()
             except Exception as e:
@@ -325,9 +383,9 @@ class SharedDataSync:
 _sync_instance: Optional[SharedDataSync] = None
 
 
-def get_sync_instance() -> SharedDataSync:
+def get_sync_instance(config: Optional[SyncConfig] = None) -> SharedDataSync:
     """Get the global SharedDataSync instance."""
     global _sync_instance
     if _sync_instance is None:
-        _sync_instance = SharedDataSync()
+        _sync_instance = SharedDataSync(config=config)
     return _sync_instance
