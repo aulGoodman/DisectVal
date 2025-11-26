@@ -43,10 +43,10 @@ jobs:
         path: DisectVal.exe
         
     - name: Commit and push .exe
-      if: ${{ inputs.commit_exe == 'true' }}
+      if: ${{ inputs.commit_exe }}
       run: |
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
         git config --local user.name "github-actions[bot]"
         git add DisectVal.exe
-        git commit -m "Add DisectVal.exe built on Windows" || echo "No changes to commit"
+        git commit -m "Add DisectVal.exe built from $(git rev-parse --short HEAD)" || echo "No changes to commit"
         git push

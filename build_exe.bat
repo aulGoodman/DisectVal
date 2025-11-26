@@ -5,7 +5,7 @@ REM This script builds DisectVal.exe and places it in the repository root
 echo Building DisectVal.exe...
 
 REM Install dependencies if needed
-pip install pyinstaller
+pip install pyinstaller>=6.0.0
 
 REM Build using the spec file
 pyinstaller DisectVal.spec --noconfirm
