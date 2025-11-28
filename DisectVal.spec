@@ -28,8 +28,12 @@ common_hiddenimports = [
     'disectval.utils.windows_checker',
     'disectval.config',
     'disectval.config.settings',
+    'disectval.config.feature_flags',
     'disectval.training',
     'disectval.training.sync',
+    'disectval.games',
+    'disectval.games.profiles',
+    'disectval.games.launcher',
     'customtkinter',
     'PIL',
     'cv2',
@@ -38,6 +42,7 @@ common_hiddenimports = [
     'yaml',
     'cryptography',
     'bcrypt',
+    'requests',
 ]
 
 # ==================== Setup.exe ====================

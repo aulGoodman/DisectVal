@@ -1,22 +1,26 @@
 """
 Main application window for DisectVal.
 Contains the dashboard with all main features.
+Modern UI with game profiles, optimization, and admin controls.
 """
 
+from __future__ import annotations
 import logging
 from pathlib import Path
-from typing import Callable, Optional, List
+from typing import Callable, Optional, List, TYPE_CHECKING
 
 try:
     import customtkinter as ctk
     CTK_AVAILABLE = True
 except ImportError:
     CTK_AVAILABLE = False
+    ctk = None  # type: ignore
 
 from ..auth.credentials import CredentialManager
 from ..auth.roles import Permission, PermissionManager, UserRole
 from ..utils.valorant_detector import InputController, ValorantDetector
 from ..utils.windows_checker import CheckStatus, WindowsSettingsChecker
+from ..config.feature_flags import get_flags_manager, FEATURES
 from .theme import theme
 
 logger = logging.getLogger(__name__)
@@ -88,11 +92,19 @@ class MainDashboard(ctk.CTkFrame if CTK_AVAILABLE else object):
         self.credential_manager = credential_manager
         self.on_logout = on_logout
         self.permission_manager = PermissionManager(user_data['role'])
+        self.flags_manager = get_flags_manager()
         
         # Initialize utilities
         self.valorant_detector = ValorantDetector()
         self.input_controller = InputController(self.valorant_detector)
         self.windows_checker = WindowsSettingsChecker()
+        
+        # Initialize game profile manager
+        try:
+            from ..games.profiles import GameProfileManager
+            self.game_manager = GameProfileManager()
+        except ImportError:
+            self.game_manager = None
         
         # Set input override based on user permission
         if user_data.get('valorant_input_allowed', False):
@@ -198,20 +210,30 @@ class MainDashboard(ctk.CTkFrame if CTK_AVAILABLE else object):
         nav_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
         nav_frame.pack(fill="x", padx=8)
         
-        # Navigation buttons
+        # Navigation buttons - check feature visibility
+        username = self.user_data['username']
+        user_tier = self.permission_manager.get_user_tier()
+        
         nav_items = [
-            ("home", "🏠", "Home"),
-            ("career", "📊", "Career"),
-            ("ranked", "🎯", "Ranked"),
-            ("ai_summary", "🤖", "AI Summary"),
-            ("pc_check", "⚙️", "PC Check"),
+            ("home", "🏠", "Home", "home_dashboard"),
+            ("games", "🎮", "Games", "game_profiles"),
+            ("pc_check", "⚙️", "PC Check", "pc_check"),
+            ("ai_summary", "🤖", "AI Analysis", "sensitivity_tracking"),
         ]
         
         # Add admin tab if user has permission
         if self.permission_manager.can_access_admin_features():
-            nav_items.append(("admin", "🔧", "Admin"))
+            nav_items.append(("admin", "🔧", "Admin", "user_management"))
         
-        for page_id, icon, label in nav_items:
+        # Add hidden feature flags panel for developers
+        if self.flags_manager.is_feature_visible("feature_flags_panel", username, user_tier):
+            nav_items.append(("features", "🚩", "Features", "feature_flags_panel"))
+        
+        for page_id, icon, label, feature_id in nav_items:
+            # Check if feature is visible to this user
+            if not self.flags_manager.is_feature_visible(feature_id, username, user_tier):
+                continue
+            
             btn = SidebarButton(
                 nav_frame,
                 text=label,
@@ -257,97 +279,334 @@ class MainDashboard(ctk.CTkFrame if CTK_AVAILABLE else object):
         # Show the appropriate page
         if page_id == "home":
             self._show_home_page()
-        elif page_id == "career":
-            self._show_career_page()
-        elif page_id == "ranked":
-            self._show_ranked_page()
+        elif page_id == "games":
+            self._show_games_page()
         elif page_id == "ai_summary":
             self._show_ai_summary_page()
         elif page_id == "pc_check":
             self._show_pc_check_page()
         elif page_id == "admin":
             self._show_admin_page()
+        elif page_id == "features":
+            self._show_features_page()
     
     def _show_home_page(self) -> None:
-        """Display the home page."""
+        """Display the home page with quick actions."""
         # Page header
-        header = self._create_page_header("Home", "Your gameplay overview and top clips")
+        header = self._create_page_header("Dashboard", "Game performance optimizer")
         header.pack(fill="x", pady=(0, 20))
         
-        # Welcome card
+        # Welcome card with gradient-like effect
         welcome_card = ctk.CTkFrame(
             self.content_frame,
             fg_color=theme.colors.bg_secondary,
-            corner_radius=12,
+            corner_radius=16,
+            border_width=1,
+            border_color=theme.colors.border_primary,
         )
         welcome_card.pack(fill="x", pady=(0, 20))
         
         welcome_inner = ctk.CTkFrame(welcome_card, fg_color="transparent")
-        welcome_inner.pack(fill="x", padx=24, pady=24)
+        welcome_inner.pack(fill="x", padx=28, pady=28)
         
         welcome_title = ctk.CTkLabel(
             welcome_inner,
             text=f"Welcome back, {self.user_data['username']}!",
-            font=(theme.fonts.family_heading, 20, "bold"),
+            font=(theme.fonts.family_heading, 22, "bold"),
             text_color=theme.colors.text_primary,
         )
         welcome_title.pack(anchor="w")
         
+        role_text = self.user_data['role'].value.capitalize()
         welcome_text = ctk.CTkLabel(
             welcome_inner,
-            text="Start analyzing your gameplay to improve your skills.",
+            text=f"Role: {role_text} • Optimize your gaming performance",
             font=(theme.fonts.family_primary, 14),
             text_color=theme.colors.text_secondary,
         )
         welcome_text.pack(anchor="w", pady=(5, 0))
         
-        # Clips section
-        clips_card = ctk.CTkFrame(
+        # Quick Actions Grid
+        actions_frame = ctk.CTkFrame(self.content_frame, fg_color="transparent")
+        actions_frame.pack(fill="x", pady=(0, 20))
+        actions_frame.grid_columnconfigure((0, 1, 2), weight=1)
+        
+        quick_actions = [
+            ("🎮", "Launch Game", "Open game with optimized settings", self._quick_launch_game),
+            ("⚙️", "PC Check", "Optimize Windows settings", lambda: self._show_page("pc_check")),
+            ("🤖", "AI Analysis", "Analyze your gameplay", lambda: self._show_page("ai_summary")),
+        ]
+        
+        for i, (icon, title, desc, command) in enumerate(quick_actions):
+            card = self._create_action_card(icon, title, desc, command)
+            card.grid(row=0, column=i, padx=8, sticky="nsew")
+        
+        # System Status Card
+        status_card = ctk.CTkFrame(
+            self.content_frame,
+            fg_color=theme.colors.bg_secondary,
+            corner_radius=16,
+        )
+        status_card.pack(fill="both", expand=True)
+        
+        status_header = ctk.CTkFrame(status_card, fg_color="transparent")
+        status_header.pack(fill="x", padx=24, pady=(24, 16))
+        
+        status_title = ctk.CTkLabel(
+            status_header,
+            text="📊 System Status",
+            font=(theme.fonts.family_heading, 18, "bold"),
+            text_color=theme.colors.text_primary,
+        )
+        status_title.pack(side="left")
+        
+        # Status indicators
+        status_content = ctk.CTkFrame(status_card, fg_color="transparent")
+        status_content.pack(fill="both", expand=True, padx=24, pady=(0, 24))
+        
+        statuses = [
+            ("Windows Optimization", "Not checked", theme.colors.text_muted),
+            ("Games Configured", f"{len(self.game_manager.user_games) if self.game_manager else 0}", theme.colors.accent_secondary),
+            ("AI Training", "Ready", theme.colors.status_optimal),
+        ]
+        
+        for name, value, color in statuses:
+            row = ctk.CTkFrame(status_content, fg_color="transparent")
+            row.pack(fill="x", pady=8)
+            
+            ctk.CTkLabel(
+                row,
+                text=name,
+                font=(theme.fonts.family_primary, 14),
+                text_color=theme.colors.text_secondary,
+            ).pack(side="left")
+            
+            ctk.CTkLabel(
+                row,
+                text=value,
+                font=(theme.fonts.family_primary, 14, "bold"),
+                text_color=color,
+            ).pack(side="right")
+    
+    def _create_action_card(self, icon: str, title: str, desc: str, command) -> ctk.CTkFrame:
+        """Create a quick action card."""
+        card = ctk.CTkFrame(
             self.content_frame,
             fg_color=theme.colors.bg_secondary,
             corner_radius=12,
+            border_width=1,
+            border_color=theme.colors.border_primary,
         )
-        clips_card.pack(fill="both", expand=True)
         
-        clips_header = ctk.CTkFrame(clips_card, fg_color="transparent")
-        clips_header.pack(fill="x", padx=24, pady=(24, 16))
+        inner = ctk.CTkFrame(card, fg_color="transparent")
+        inner.pack(fill="both", expand=True, padx=20, pady=20)
         
-        clips_title = ctk.CTkLabel(
-            clips_header,
-            text="🎬 Top Clips",
+        icon_label = ctk.CTkLabel(
+            inner,
+            text=icon,
+            font=(theme.fonts.family_primary, 32),
+        )
+        icon_label.pack(anchor="w")
+        
+        title_label = ctk.CTkLabel(
+            inner,
+            text=title,
             font=(theme.fonts.family_heading, 16, "bold"),
             text_color=theme.colors.text_primary,
         )
-        clips_title.pack(side="left")
+        title_label.pack(anchor="w", pady=(10, 0))
         
-        clips_info = ctk.CTkLabel(
-            clips_header,
-            text="Top 3 plays from your last 5 games",
+        desc_label = ctk.CTkLabel(
+            inner,
+            text=desc,
             font=(theme.fonts.family_primary, 12),
             text_color=theme.colors.text_muted,
         )
-        clips_info.pack(side="right")
+        desc_label.pack(anchor="w", pady=(2, 10))
         
-        # Placeholder for clips
-        clips_content = ctk.CTkFrame(clips_card, fg_color="transparent")
-        clips_content.pack(fill="both", expand=True, padx=24, pady=(0, 24))
-        
-        no_clips_label = ctk.CTkLabel(
-            clips_content,
-            text="No clips yet.\n\nEnable clip recording in Settings to capture your best plays.",
-            font=(theme.fonts.family_primary, 14),
-            text_color=theme.colors.text_muted,
-            justify="center",
+        btn = ctk.CTkButton(
+            inner,
+            text="Open →",
+            font=(theme.fonts.family_primary, 12, "bold"),
+            fg_color=theme.colors.accent_primary,
+            hover_color="#FF5F6D",
+            height=32,
+            corner_radius=6,
+            command=command,
         )
-        no_clips_label.place(relx=0.5, rely=0.5, anchor="center")
+        btn.pack(anchor="w")
+        
+        return card
     
-    def _show_career_page(self) -> None:
-        """Display the career page."""
-        header = self._create_page_header("Career", "Your match history and performance tracking")
+    def _quick_launch_game(self) -> None:
+        """Quick launch - go to games page."""
+        self._show_page("games")
+    
+    def _show_games_page(self) -> None:
+        """Display the games page with configured games."""
+        header = self._create_page_header("Games", "Configure and launch games with optimized settings")
         header.pack(fill="x", pady=(0, 20))
         
-        # Stats overview
-        stats_frame = ctk.CTkFrame(self.content_frame, fg_color="transparent")
+        # Get available games for this user
+        user_tier = self.permission_manager.get_user_tier()
+        is_tester = self.permission_manager.is_tester()
+        is_developer = self.permission_manager.is_developer()
+        
+        try:
+            from ..games.profiles import APPROVED_GAMES, AccessTier, GameStatus
+            
+            # Available games section
+            available_card = ctk.CTkFrame(
+                self.content_frame,
+                fg_color=theme.colors.bg_secondary,
+                corner_radius=16,
+            )
+            available_card.pack(fill="x", pady=(0, 20))
+            
+            available_inner = ctk.CTkFrame(available_card, fg_color="transparent")
+            available_inner.pack(fill="x", padx=24, pady=24)
+            
+            ctk.CTkLabel(
+                available_inner,
+                text="🎮 Available Games",
+                font=(theme.fonts.family_heading, 18, "bold"),
+                text_color=theme.colors.text_primary,
+            ).pack(anchor="w", pady=(0, 16))
+            
+            # Games grid
+            games_frame = ctk.CTkFrame(available_inner, fg_color="transparent")
+            games_frame.pack(fill="x")
+            games_frame.grid_columnconfigure((0, 1, 2), weight=1)
+            
+            col = 0
+            row = 0
+            for game_id, profile in APPROVED_GAMES.items():
+                status = GameStatus(profile.status)
+                
+                # Check if user can see this game
+                can_see = False
+                if is_developer:
+                    can_see = True
+                elif status == GameStatus.PUBLIC:
+                    can_see = True
+                elif status == GameStatus.TESTING and is_tester:
+                    can_see = True
+                elif status == GameStatus.BETA and (is_tester or user_tier in ["pro", "developer"]):
+                    can_see = True
+                
+                if not can_see:
+                    continue
+                
+                # Create game card
+                game_card = ctk.CTkFrame(
+                    games_frame,
+                    fg_color=theme.colors.bg_tertiary,
+                    corner_radius=12,
+                )
+                game_card.grid(row=row, column=col, padx=8, pady=8, sticky="nsew")
+                
+                game_inner = ctk.CTkFrame(game_card, fg_color="transparent")
+                game_inner.pack(fill="both", expand=True, padx=16, pady=16)
+                
+                # Game name with status badge
+                name_frame = ctk.CTkFrame(game_inner, fg_color="transparent")
+                name_frame.pack(fill="x")
+                
+                ctk.CTkLabel(
+                    name_frame,
+                    text=profile.name,
+                    font=(theme.fonts.family_heading, 14, "bold"),
+                    text_color=theme.colors.text_primary,
+                ).pack(side="left")
+                
+                # Status badge
+                badge_color = {
+                    GameStatus.PUBLIC: theme.colors.status_optimal,
+                    GameStatus.TESTING: theme.colors.accent_warning,
+                    GameStatus.BETA: theme.colors.accent_secondary,
+                    GameStatus.PRIVATE: theme.colors.accent_error,
+                }.get(status, theme.colors.text_muted)
+                
+                ctk.CTkLabel(
+                    name_frame,
+                    text=status.value.upper(),
+                    font=(theme.fonts.family_primary, 9, "bold"),
+                    text_color=badge_color,
+                ).pack(side="right")
+                
+                ctk.CTkLabel(
+                    game_inner,
+                    text=profile.description,
+                    font=(theme.fonts.family_primary, 11),
+                    text_color=theme.colors.text_muted,
+                    wraplength=180,
+                ).pack(anchor="w", pady=(4, 10))
+                
+                # Check if game is configured
+                is_configured = self.game_manager and game_id in self.game_manager.user_games
+                
+                if is_configured:
+                    ctk.CTkButton(
+                        game_inner,
+                        text="▶ Launch",
+                        font=(theme.fonts.family_primary, 12, "bold"),
+                        fg_color=theme.colors.accent_secondary,
+                        hover_color="#00B894",
+                        height=32,
+                        corner_radius=6,
+                        command=lambda gid=game_id: self._launch_game(gid),
+                    ).pack(fill="x")
+                else:
+                    ctk.CTkButton(
+                        game_inner,
+                        text="+ Configure",
+                        font=(theme.fonts.family_primary, 12),
+                        fg_color=theme.colors.bg_hover,
+                        hover_color=theme.colors.accent_primary,
+                        height=32,
+                        corner_radius=6,
+                        command=lambda gid=game_id: self._configure_game(gid),
+                    ).pack(fill="x")
+                
+                col += 1
+                if col > 2:
+                    col = 0
+                    row += 1
+                    
+        except ImportError as e:
+            logger.warning(f"Games module not available: {e}")
+            ctk.CTkLabel(
+                self.content_frame,
+                text="Games module not available",
+                font=(theme.fonts.family_primary, 14),
+                text_color=theme.colors.text_muted,
+            ).pack(pady=40)
+    
+    def _configure_game(self, game_id: str) -> None:
+        """Open game configuration dialog."""
+        try:
+            from tkinter import filedialog
+            
+            exe_path = filedialog.askopenfilename(
+                title=f"Select {game_id} Executable",
+                filetypes=[("Executable", "*.exe"), ("All files", "*.*")],
+            )
+            
+            if exe_path and self.game_manager:
+                self.game_manager.add_game(game_id, exe_path)
+                self._show_games_page()  # Refresh
+        except Exception as e:
+            logger.error(f"Error configuring game: {e}")
+    
+    def _launch_game(self, game_id: str) -> None:
+        """Launch a configured game."""
+        try:
+            from ..games.launcher import GameLauncher
+            
+            launcher = GameLauncher(self.game_manager)
+            launcher.launch_game(game_id)
+        except Exception as e:
+            logger.error(f"Error launching game: {e}")
         stats_frame.pack(fill="x", pady=(0, 20))
         stats_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
         
@@ -854,3 +1113,170 @@ class MainDashboard(ctk.CTkFrame if CTK_AVAILABLE else object):
         label_text.pack(anchor="w")
         
         return card
+    
+    def _show_features_page(self) -> None:
+        """Display the feature flags management page (developer only)."""
+        if not self.permission_manager.can_manage_feature_flags():
+            return
+        
+        header = self._create_page_header("Feature Flags", "Control feature visibility for users")
+        header.pack(fill="x", pady=(0, 20))
+        
+        # Info card
+        info_card = ctk.CTkFrame(
+            self.content_frame,
+            fg_color=theme.colors.bg_secondary,
+            corner_radius=16,
+            border_width=1,
+            border_color=theme.colors.accent_warning,
+        )
+        info_card.pack(fill="x", pady=(0, 20))
+        
+        info_inner = ctk.CTkFrame(info_card, fg_color="transparent")
+        info_inner.pack(fill="x", padx=24, pady=16)
+        
+        ctk.CTkLabel(
+            info_inner,
+            text="⚠️ Developer Only",
+            font=(theme.fonts.family_heading, 14, "bold"),
+            text_color=theme.colors.accent_warning,
+        ).pack(anchor="w")
+        
+        ctk.CTkLabel(
+            info_inner,
+            text="Control which features are visible to users. Hidden features are only visible to granted users.",
+            font=(theme.fonts.family_primary, 12),
+            text_color=theme.colors.text_secondary,
+        ).pack(anchor="w", pady=(4, 0))
+        
+        # Features list
+        features_card = ctk.CTkScrollableFrame(
+            self.content_frame,
+            fg_color=theme.colors.bg_secondary,
+            corner_radius=16,
+        )
+        features_card.pack(fill="both", expand=True)
+        
+        all_features = self.flags_manager.get_all_features_for_admin()
+        
+        # Group by category
+        categories = {}
+        for feature in all_features:
+            cat = feature.category
+            if cat not in categories:
+                categories[cat] = []
+            categories[cat].append(feature)
+        
+        for category, features in categories.items():
+            # Category header
+            cat_frame = ctk.CTkFrame(features_card, fg_color="transparent")
+            cat_frame.pack(fill="x", padx=24, pady=(16, 8))
+            
+            ctk.CTkLabel(
+                cat_frame,
+                text=category.upper(),
+                font=(theme.fonts.family_primary, 11, "bold"),
+                text_color=theme.colors.text_muted,
+            ).pack(anchor="w")
+            
+            # Features in category
+            for feature in features:
+                self._create_feature_flag_row(features_card, feature)
+    
+    def _create_feature_flag_row(self, parent, feature) -> None:
+        """Create a row for a feature flag."""
+        row = ctk.CTkFrame(
+            parent,
+            fg_color=theme.colors.bg_tertiary,
+            corner_radius=8,
+        )
+        row.pack(fill="x", padx=24, pady=4)
+        
+        row_inner = ctk.CTkFrame(row, fg_color="transparent")
+        row_inner.pack(fill="x", padx=16, pady=12)
+        
+        # Left side - info
+        info_frame = ctk.CTkFrame(row_inner, fg_color="transparent")
+        info_frame.pack(side="left", fill="x", expand=True)
+        
+        name_frame = ctk.CTkFrame(info_frame, fg_color="transparent")
+        name_frame.pack(fill="x")
+        
+        ctk.CTkLabel(
+            name_frame,
+            text=feature.name,
+            font=(theme.fonts.family_primary, 13, "bold"),
+            text_color=theme.colors.text_primary,
+        ).pack(side="left")
+        
+        # Hidden badge
+        if feature.hidden:
+            ctk.CTkLabel(
+                name_frame,
+                text="HIDDEN",
+                font=(theme.fonts.family_primary, 9, "bold"),
+                text_color=theme.colors.accent_error,
+            ).pack(side="left", padx=(8, 0))
+        
+        ctk.CTkLabel(
+            info_frame,
+            text=feature.description,
+            font=(theme.fonts.family_primary, 11),
+            text_color=theme.colors.text_muted,
+        ).pack(anchor="w", pady=(2, 0))
+        
+        # Granted users
+        if feature.granted_users:
+            ctk.CTkLabel(
+                info_frame,
+                text=f"Granted: {', '.join(feature.granted_users)}",
+                font=(theme.fonts.family_primary, 10),
+                text_color=theme.colors.accent_secondary,
+            ).pack(anchor="w", pady=(2, 0))
+        
+        # Right side - actions
+        actions_frame = ctk.CTkFrame(row_inner, fg_color="transparent")
+        actions_frame.pack(side="right")
+        
+        # Grant access button
+        grant_btn = ctk.CTkButton(
+            actions_frame,
+            text="Grant Access",
+            font=(theme.fonts.family_primary, 11),
+            fg_color=theme.colors.bg_hover,
+            hover_color=theme.colors.accent_secondary,
+            height=28,
+            width=100,
+            corner_radius=4,
+            command=lambda f=feature: self._show_grant_dialog(f),
+        )
+        grant_btn.pack(side="left", padx=4)
+        
+        # Toggle hidden
+        hidden_var = ctk.BooleanVar(value=feature.hidden)
+        hidden_switch = ctk.CTkSwitch(
+            actions_frame,
+            text="Hidden",
+            font=(theme.fonts.family_primary, 11),
+            variable=hidden_var,
+            onvalue=True,
+            offvalue=False,
+            command=lambda f=feature, v=hidden_var: self._toggle_feature_hidden(f, v),
+        )
+        hidden_switch.pack(side="left", padx=4)
+    
+    def _show_grant_dialog(self, feature) -> None:
+        """Show dialog to grant feature access to a user."""
+        dialog = ctk.CTkInputDialog(
+            text=f"Enter username to grant access to '{feature.name}':",
+            title="Grant Feature Access",
+        )
+        username = dialog.get_input()
+        
+        if username:
+            self.flags_manager.grant_feature_access(feature.feature_id, username)
+            self._show_features_page()  # Refresh
+    
+    def _toggle_feature_hidden(self, feature, var) -> None:
+        """Toggle whether a feature is hidden."""
+        self.flags_manager.set_feature_hidden(feature.feature_id, var.get())
