@@ -34,12 +34,14 @@ class GameLauncher:
             }
             
             if settings.power_plan in power_plans:
-                subprocess.run(
+                result = subprocess.run(
                     ["powercfg", "/setactive", power_plans[settings.power_plan]],
                     capture_output=True,
-                    check=False
                 )
-                logger.info(f"Applied power plan: {settings.power_plan}")
+                if result.returncode != 0:
+                    logger.warning(f"Failed to set power plan: {result.stderr.decode()}")
+                else:
+                    logger.info(f"Applied power plan: {settings.power_plan}")
             
             return True
         except Exception as e:

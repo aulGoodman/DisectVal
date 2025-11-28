@@ -7,7 +7,7 @@ Modern UI with game profiles, optimization, and admin controls.
 from __future__ import annotations
 import logging
 from pathlib import Path
-from typing import Callable, Optional, List, TYPE_CHECKING
+from typing import Callable, Optional, List
 
 try:
     import customtkinter as ctk

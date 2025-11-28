@@ -233,9 +233,15 @@ class FeatureFlagsManager:
         # If not hidden, check tier requirement
         if not feature.hidden:
             tier_order = ["free", "ad_free", "pro", "tester", "developer"]
+            # Validate user_tier
             if user_tier not in tier_order:
                 user_tier = "free"
-            if tier_order.index(user_tier) >= tier_order.index(feature.requires_tier):
+            # Validate feature requires_tier
+            required_tier = feature.requires_tier
+            if required_tier not in tier_order:
+                required_tier = "free"
+            
+            if tier_order.index(user_tier) >= tier_order.index(required_tier):
                 return True
             return False
         
