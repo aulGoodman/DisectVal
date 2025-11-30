@@ -7,6 +7,7 @@ import json
 import logging
 import os
 from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -32,6 +33,15 @@ class AccessTier(Enum):
     DEVELOPER = "developer"     # Full developer access
 
 
+class GameCategory(Enum):
+    """Category of game for different features."""
+    FPS_COMPETITIVE = "fps_competitive"     # Valorant, CS2, etc
+    FPS_BATTLE_ROYALE = "fps_battle_royale"  # Apex, Fortnite
+    AUTOMATION = "automation"               # Roblox, etc
+    MOBA = "moba"                           # League, Dota
+    OTHER = "other"
+
+
 @dataclass
 class WindowsSettings:
     """Windows settings to apply before launching a game."""
@@ -55,6 +65,14 @@ class DisplaySettings:
 
 
 @dataclass
+class GameUsageStats:
+    """Track usage statistics for sorting games."""
+    total_sessions: int = 0
+    total_time_minutes: int = 0
+    last_used: str = ""  # ISO format timestamp
+
+
+@dataclass
 class GameProfile:
     """Profile for a supported game."""
     game_id: str
@@ -62,6 +80,7 @@ class GameProfile:
     executable_path: str = ""
     icon_path: str = ""
     status: str = GameStatus.PUBLIC.value
+    category: str = GameCategory.OTHER.value
     
     # Settings
     windows_settings: WindowsSettings = field(default_factory=WindowsSettings)
@@ -77,8 +96,12 @@ class GameProfile:
     
     # Metadata
     description: str = ""
+    short_description: str = ""
     supported_features: List[str] = field(default_factory=list)
     required_tier: str = AccessTier.FREE.value
+    
+    # Usage tracking
+    usage_stats: GameUsageStats = field(default_factory=GameUsageStats)
 
 
 # Preset approved games - only these can be added by users
@@ -86,23 +109,30 @@ APPROVED_GAMES: Dict[str, GameProfile] = {
     "valorant": GameProfile(
         game_id="valorant",
         name="Valorant",
-        description="Tactical 5v5 shooter by Riot Games",
+        description="AI-powered coaching for Valorant. Get real-time insights, gameplay advice, "
+                    "sensitivity optimization, crosshair analysis, and personalized tips to improve your rank.",
+        short_description="Tactical 5v5 shooter by Riot Games",
+        category=GameCategory.FPS_COMPETITIVE.value,
         status=GameStatus.PUBLIC.value,
         required_tier=AccessTier.FREE.value,
         supported_features=[
-            "sensitivity_tracking",
-            "crosshair_analysis",
-            "position_tracking",
-            "aim_training",
-            "replay_analysis",
-            "pc_optimization",
-            "settings_sync"
+            "coaching",              # Real-time coaching and tips
+            "sensitivity_tracking",  # Mouse sensitivity analysis
+            "crosshair_analysis",    # Crosshair placement feedback
+            "position_tracking",     # Movement and positioning advice
+            "aim_training",          # Aim improvement exercises
+            "replay_analysis",       # Post-game replay analysis
+            "pc_optimization",       # Windows settings for Valorant
+            "settings_sync",         # Sync in-game settings
+            "warmup_routines",       # Pre-game warmup suggestions
+            "rank_improvement",      # Tips to climb ranks
         ],
         windows_settings=WindowsSettings(
             power_plan="high_performance",
             disable_mouse_acceleration=True,
             game_mode=True,
             gpu_scheduling=True,
+            disable_fullscreen_optimizations=True,
         ),
         display_settings=DisplaySettings(
             resolution_width=1920,
@@ -111,10 +141,48 @@ APPROVED_GAMES: Dict[str, GameProfile] = {
             fullscreen=True,
         ),
     ),
+    "roblox": GameProfile(
+        game_id="roblox",
+        name="Roblox",
+        description="Smart automation and rate verification for Roblox. Automate repetitive tasks, "
+                    "calculate real drop rates, verify creator claims, run overnight automation, "
+                    "and search the web for solutions to common problems.",
+        short_description="Gaming platform by Roblox Corporation",
+        category=GameCategory.AUTOMATION.value,
+        status=GameStatus.PUBLIC.value,
+        required_tier=AccessTier.FREE.value,
+        supported_features=[
+            "task_automation",       # Automate repetitive tasks
+            "rate_calculator",       # Calculate actual drop/spawn rates
+            "rate_verification",     # Verify if creator claims are accurate
+            "overnight_automation",  # Run automation while you sleep
+            "web_search",            # Search for fixes to common problems
+            "macro_recorder",        # Record and replay actions
+            "script_detection",      # Detect when games have issues
+            "afk_prevention",        # Keep account active
+            "multi_instance",        # Run multiple accounts
+            "smart_decisions",       # AI makes smart choices
+        ],
+        windows_settings=WindowsSettings(
+            power_plan="balanced",  # Save power for overnight
+            disable_mouse_acceleration=False,
+            game_mode=False,  # Not needed for automation
+            gpu_scheduling=False,
+        ),
+        display_settings=DisplaySettings(
+            resolution_width=1280,
+            resolution_height=720,
+            refresh_rate=60,
+            fullscreen=False,
+            borderless=True,  # Better for automation
+        ),
+    ),
     "csgo2": GameProfile(
         game_id="csgo2",
         name="Counter-Strike 2",
-        description="Tactical shooter by Valve",
+        description="Competitive FPS coaching with aim analysis and positioning feedback.",
+        short_description="Tactical shooter by Valve",
+        category=GameCategory.FPS_COMPETITIVE.value,
         status=GameStatus.TESTING.value,
         required_tier=AccessTier.FREE.value,
         supported_features=[
@@ -127,7 +195,9 @@ APPROVED_GAMES: Dict[str, GameProfile] = {
     "apex": GameProfile(
         game_id="apex",
         name="Apex Legends",
-        description="Battle royale by Respawn Entertainment",
+        description="Battle royale performance tracking and movement analysis.",
+        short_description="Battle royale by Respawn Entertainment",
+        category=GameCategory.FPS_BATTLE_ROYALE.value,
         status=GameStatus.BETA.value,
         required_tier=AccessTier.PRO.value,
         supported_features=[
@@ -139,7 +209,9 @@ APPROVED_GAMES: Dict[str, GameProfile] = {
     "overwatch2": GameProfile(
         game_id="overwatch2",
         name="Overwatch 2",
-        description="Team-based hero shooter by Blizzard",
+        description="Hero shooter optimization and aim training.",
+        short_description="Team-based hero shooter by Blizzard",
+        category=GameCategory.FPS_COMPETITIVE.value,
         status=GameStatus.BETA.value,
         required_tier=AccessTier.PRO.value,
         supported_features=[
@@ -150,7 +222,9 @@ APPROVED_GAMES: Dict[str, GameProfile] = {
     "fortnite": GameProfile(
         game_id="fortnite",
         name="Fortnite",
-        description="Battle royale by Epic Games",
+        description="Battle royale building and combat analysis.",
+        short_description="Battle royale by Epic Games",
+        category=GameCategory.FPS_BATTLE_ROYALE.value,
         status=GameStatus.PRIVATE.value,
         required_tier=AccessTier.DEVELOPER.value,
         supported_features=["sensitivity_tracking"],
@@ -189,6 +263,10 @@ class GameProfileManager:
                         game_data['windows_settings'] = WindowsSettings(**game_data['windows_settings'])
                     if 'display_settings' in game_data:
                         game_data['display_settings'] = DisplaySettings(**game_data['display_settings'])
+                    if 'usage_stats' in game_data:
+                        game_data['usage_stats'] = GameUsageStats(**game_data['usage_stats'])
+                    else:
+                        game_data['usage_stats'] = GameUsageStats()
                     games[game_id] = GameProfile(**game_data)
                 return games
             except Exception as e:
@@ -234,6 +312,38 @@ class GameProfileManager:
         
         return available
     
+    def get_games_sorted_by_usage(
+        self,
+        user_tier: AccessTier,
+        is_tester: bool = False,
+        is_developer: bool = False
+    ) -> List[GameProfile]:
+        """Get games sorted by usage (most used first, then by last used)."""
+        available = self.get_available_games(user_tier, is_tester, is_developer)
+        
+        def sort_key(profile: GameProfile) -> tuple:
+            # Get user's stats if configured
+            user_profile = self.user_games.get(profile.game_id)
+            if user_profile and user_profile.usage_stats:
+                stats = user_profile.usage_stats
+                # Sort by: total sessions (desc), last used (desc)
+                last_used = stats.last_used or "1970-01-01T00:00:00"
+                return (-stats.total_sessions, -stats.total_time_minutes, last_used)
+            return (0, 0, "1970-01-01T00:00:00")
+        
+        return sorted(available, key=sort_key, reverse=True)
+    
+    def record_game_session(self, game_id: str, duration_minutes: int = 0) -> None:
+        """Record a game session for usage tracking."""
+        if game_id not in self.user_games:
+            return
+        
+        profile = self.user_games[game_id]
+        profile.usage_stats.total_sessions += 1
+        profile.usage_stats.total_time_minutes += duration_minutes
+        profile.usage_stats.last_used = datetime.now().isoformat()
+        self._save_user_games()
+    
     def add_game(self, game_id: str, executable_path: str = "") -> bool:
         """Add an approved game to user's configuration."""
         if game_id not in APPROVED_GAMES:
@@ -241,6 +351,8 @@ class GameProfileManager:
         
         profile = GameProfile(**asdict(APPROVED_GAMES[game_id]))
         profile.executable_path = executable_path
+        # Initialize usage stats
+        profile.usage_stats = GameUsageStats()
         self.user_games[game_id] = profile
         self._save_user_games()
         return True
