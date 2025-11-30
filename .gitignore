@@ -36,7 +36,8 @@ MANIFEST
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
-*.spec
+# Note: *.spec files are NOT ignored - we keep DisectVal.spec for building
+# Note: *.exe files at root are NOT ignored - they are the built executables
 
 # Installer logs
 pip-log.txt
