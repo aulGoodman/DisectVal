@@ -327,11 +327,15 @@ class GameProfileManager:
             if user_profile and user_profile.usage_stats:
                 stats = user_profile.usage_stats
                 # Sort by: total sessions (desc), last used (desc)
-                last_used = stats.last_used or "1970-01-01T00:00:00"
-                return (-stats.total_sessions, -stats.total_time_minutes, last_used)
-            return (0, 0, "1970-01-01T00:00:00")
+                last_used_str = stats.last_used or "1970-01-01T00:00:00"
+                try:
+                    last_used_ts = datetime.fromisoformat(last_used_str).timestamp()
+                except ValueError:
+                    last_used_ts = 0
+                return (-stats.total_sessions, -stats.total_time_minutes, -last_used_ts)
+            return (0, 0, 0)
         
-        return sorted(available, key=sort_key, reverse=True)
+        return sorted(available, key=sort_key)
     
     def record_game_session(self, game_id: str, duration_minutes: int = 0) -> None:
         """Record a game session for usage tracking."""

@@ -782,7 +782,8 @@ class MainDashboard(ctk.CTkFrame if CTK_AVAILABLE else object):
         try:
             from ..games.launcher import GameLauncher
             
-            # Record that we're launching this game
+            # Record session start (duration=0 for now, could be updated on game exit)
+            # Future: Track game process and update duration when game closes
             if self.game_manager:
                 self.game_manager.record_game_session(game_id, 0)
             
@@ -1031,9 +1032,14 @@ class MainDashboard(ctk.CTkFrame if CTK_AVAILABLE else object):
             ).pack(anchor="w", pady=(8, 4))
             
             if plan.price_yearly > 0:
+                yearly_savings = plan.price_monthly * 12 - plan.price_yearly
+                if yearly_savings > 0:
+                    savings_text = f"or ${plan.price_yearly:.2f}/year (save ${yearly_savings:.2f})"
+                else:
+                    savings_text = f"or ${plan.price_yearly:.2f}/year"
                 ctk.CTkLabel(
                     plan_inner,
-                    text=f"or ${plan.price_yearly:.2f}/year (save ${(plan.price_monthly * 12 - plan.price_yearly):.2f})",
+                    text=savings_text,
                     font=(theme.fonts.family_primary, 10),
                     text_color=theme.colors.text_muted,
                 ).pack(anchor="w")

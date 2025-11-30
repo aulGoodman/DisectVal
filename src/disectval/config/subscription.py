@@ -222,8 +222,14 @@ class SubscriptionManager:
             return True
         return current_count < plan.max_games
     
-    def upgrade_plan(self, plan_id: str, user_id: str) -> bool:
-        """Upgrade to a new plan (placeholder for actual payment integration)."""
+    def change_plan(self, plan_id: str, user_id: str) -> bool:
+        """
+        Change to a different plan.
+        
+        Note: This is a placeholder for actual payment integration.
+        In production, upgrades would require payment processing
+        and downgrades would handle proration/refunds.
+        """
         if plan_id not in SUBSCRIPTION_PLANS:
             return False
         
@@ -239,6 +245,24 @@ class SubscriptionManager:
         )
         self._save_subscription()
         return True
+    
+    def upgrade_plan(self, plan_id: str, user_id: str) -> bool:
+        """Upgrade to a higher tier plan."""
+        if plan_id not in SUBSCRIPTION_PLANS:
+            return False
+        
+        # Define tier order for validation
+        tier_order = ["free", "basic", "pro"]
+        current = self.get_current_plan().plan_id
+        
+        current_idx = tier_order.index(current) if current in tier_order else 0
+        new_idx = tier_order.index(plan_id) if plan_id in tier_order else 0
+        
+        # Only allow actual upgrades
+        if new_idx <= current_idx:
+            return False
+        
+        return self.change_plan(plan_id, user_id)
     
     def cancel_subscription(self) -> bool:
         """Cancel the current subscription."""
